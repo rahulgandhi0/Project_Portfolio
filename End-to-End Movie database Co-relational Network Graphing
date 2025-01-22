@@ -1,1 +1,203 @@
+import csv
+import requests
 
+class Graph:
+    """
+    Represents a graph structure with nodes and edges.
+    Nodes represent actors, and edges represent co-actor relationships.
+    """
+
+    def __init__(self, with_nodes_file=None, with_edges_file=None):
+        """
+        Initialize the Graph with optional node and edge CSV files.
+        If files are provided, load their contents into the graph.
+        """
+        self.nodes = []
+        self.edges = []
+
+        if with_nodes_file and with_edges_file:
+            # Load nodes from CSV
+            with open(with_nodes_file, 'r') as file:
+                nodes_csv = csv.reader(file)
+                self.nodes = [(row[0], row[1]) for row in list(nodes_csv)[1:]]
+
+            # Load edges from CSV
+            with open(with_edges_file, 'r') as file:
+                edges_csv = csv.reader(file)
+                self.edges = [(row[0], row[1]) for row in list(edges_csv)[1:]]
+
+    def add_node(self, id: str, name: str) -> None:
+        """
+        Add a node to the graph if it does not already exist.
+        """
+        clean_name = name.replace(",", "")
+        if (id, clean_name) not in self.nodes:
+            self.nodes.append((id, clean_name))
+
+    def add_edge(self, source: str, target: str) -> None:
+        """
+        Add an edge between two nodes if it does not already exist.
+        """
+        edge = tuple(sorted([source, target]))
+        if edge not in self.edges:
+            self.edges.append(edge)
+
+    def total_nodes(self) -> int:
+        """
+        Returns the total number of nodes in the graph.
+        """
+        return len(self.nodes)
+
+    def total_edges(self) -> int:
+        """
+        Returns the total number of edges in the graph.
+        """
+        return len(self.edges)
+
+    def max_degree_nodes(self) -> dict:
+        """
+        Returns the nodes with the highest degree (most connections).
+        If there are ties, all nodes with the max degree are included.
+        """
+        degree_count = {}
+        for source, target in self.edges:
+            degree_count[source] = degree_count.get(source, 0) + 1
+            degree_count[target] = degree_count.get(target, 0) + 1
+
+        max_degree = max(degree_count.values(), default=0)
+        return {node: degree for node, degree in degree_count.items() if degree == max_degree}
+
+    def write_edges_file(self, path="edges.csv") -> None:
+        """
+        Write all edges to a CSV file.
+        """
+        with open(path, 'w', encoding='utf-8') as file:
+            file.write("source,target\n")
+            for edge in self.edges:
+                file.write(f"{edge[0]},{edge[1]}\n")
+        print("Finished writing edges to CSV.")
+
+    def write_nodes_file(self, path="nodes.csv") -> None:
+        """
+        Write all nodes to a CSV file.
+        """
+        with open(path, 'w', encoding='utf-8') as file:
+            file.write("id,name\n")
+            for node in self.nodes:
+                file.write(f"{node[0]},{node[1]}\n")
+        print("Finished writing nodes to CSV.")
+
+
+class TMDBAPIUtils:
+    """
+    A utility class for interacting with the TMDB API.
+    """
+
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    def get_movie_cast(self, movie_id: str, limit: int = None, exclude_ids: list[int] = None) -> list:
+        """
+        Retrieve the cast of a movie, with options to exclude specific IDs and limit the results.
+        """
+        url = f"https://api.themoviedb.org/3/movie/{movie_id}/credits"
+        params = {"api_key": self.api_key, "language": "en-US"}
+        response = requests.get(url, params=params)
+
+        if response.status_code != 200:
+            response.raise_for_status()
+
+        data = response.json()
+        cast_list = data.get("cast", [])
+
+        if exclude_ids:
+            cast_list = [cast for cast in cast_list if cast["id"] not in exclude_ids]
+
+        cast_list.sort(key=lambda cast: cast.get("order", float('inf')))
+
+        if limit is not None:
+            cast_list = [cast for cast in cast_list if cast.get("order", float('inf')) < limit]
+
+        return [
+            {"id": str(cast["id"]), "character": cast.get("character", ""), "credit_id": cast.get("credit_id", "")}
+            for cast in cast_list
+        ]
+
+    def get_movie_credits_for_person(self, person_id: str, start_date: str = None, end_date: str = None) -> list:
+        """
+        Retrieve movie credits for a specific person within an optional date range.
+        """
+        url = f"https://api.themoviedb.org/3/person/{person_id}/movie_credits"
+        params = {"api_key": self.api_key, "language": "en-US"}
+        response = requests.get(url, params=params)
+
+        if response.status_code != 200:
+            response.raise_for_status()
+
+        data = response.json()
+        cast_credits = data.get("cast", [])
+
+        filtered_credits = []
+        for credit in cast_credits:
+            release_date = credit.get("release_date", "")
+            if start_date and release_date < start_date:
+                continue
+            if end_date and release_date > end_date:
+                continue
+            filtered_credits.append({"id": credit.get("id"), "title": credit.get("title"), "release_date": release_date})
+
+        return filtered_credits
+
+
+def return_name() -> str:
+    """
+    Return the GT username.
+    """
+    return "rgandhi48"
+
+
+if __name__ == "__main__":
+    graph = Graph()
+    graph.add_node(id="2975", name="Laurence Fishburne")
+    tmdb_api_utils = TMDBAPIUtils(api_key="c63e3efd4dbca3ec59b43eb3c4604387")
+
+    # Initialize the graph for Laurence Fishburne
+    base_nodes = []
+    try:
+        movies = tmdb_api_utils.get_movie_credits_for_person("2975", "1999-01-01", "1999-12-31")
+        for movie in movies:
+            movie_id = movie["id"]
+            co_actors = tmdb_api_utils.get_movie_cast(movie_id, limit=5, exclude_ids=[2975])
+            for co_actor in co_actors:
+                co_actor_id, co_actor_name = str(co_actor["id"]), co_actor["character"]
+                graph.add_node(co_actor_id, co_actor_name)
+                graph.add_edge("2975", co_actor_id)
+                base_nodes.append(co_actor_id)
+    except Exception as e:
+        print(f"Error during graph initialization: {e}")
+
+    # Expand graph with two iterations
+    current_nodes = base_nodes
+    for _ in range(2):
+        new_nodes = []
+        for node_id in current_nodes:
+            try:
+                movies = tmdb_api_utils.get_movie_credits_for_person(node_id, "1999-01-01", "1999-12-31")
+                for movie in movies:
+                    movie_id = movie["id"]
+                    co_actors = tmdb_api_utils.get_movie_cast(movie_id, limit=5, exclude_ids=[int(node_id)])
+                    for co_actor in co_actors:
+                        co_actor_id, co_actor_name = str(co_actor["id"]), co_actor["character"]
+                        graph.add_node(co_actor_id, co_actor_name)
+                        graph.add_edge(node_id, co_actor_id)
+                        if co_actor_id not in new_nodes and co_actor_id not in current_nodes:
+                            new_nodes.append(co_actor_id)
+            except Exception as e:
+                print(f"Error during graph expansion: {e}")
+        current_nodes = new_nodes
+
+    # Write graph to CSV
+    graph.write_edges_file()
+    graph.write_nodes_file()
+
+    print("Graph construction complete.")
