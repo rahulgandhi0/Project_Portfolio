@@ -12,13 +12,13 @@ Export the graph data into CSV files (nodes.csv and edges.csv).
 Create, partition, and query an SQLite database using movie and cast data.
 Answer specific analytical questions using SQL, such as identifying top actors, high-scoring movies, and collaborative relationships.
 
-**Tools, Technologies, and Skills:
+**Tools, Technologies, and Skills:**
+
 Languages and Libraries:
-**
 Python 3.10.x (with the Standard Library and Requests for API interaction).
 SQLite 3.37.2 (for database creation and querying).
-Skills:
 
+Skills:
 API integration and data extraction (TMDb API).
 Data modeling and graph construction.
 CSV manipulation.
