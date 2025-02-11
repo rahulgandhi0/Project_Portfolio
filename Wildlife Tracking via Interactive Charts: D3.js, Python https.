@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<!-- cse6242 -->
+<!-- run: http-server & -->
+
+<head>
+  <style>    
+    body {
+      font-family: Arial, sans-serif;
+    }
+    .axis-label {
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: bold;
+      text-anchor: middle;
+    }
+    .credit {
+      font-size: 12px;
+      fill: #000000;
+    }
+  </style>
+<title>Wildlife Trafficking Incidents per Species (2015 to 2023)</title>
+</head>
+
+<body>
+
+  <script src="lib/d3/d3.min.js"></script>
+  <script src="lib/d3-dsv/d3-dsv.min.js"></script>
+  <script src="lib/d3-fetch/d3-fetch.min.js"></script>
+
+  <script>
+    // define the dimensions and margins for the graph
+    var margin = { top: 50, right: 30, bottom: 50, left: 200 };
+    var width = 800 - margin.left - margin.right;
+    var height = 500 - margin.top - margin.bottom;
+
+
+    // create scales x & y for X and Y axis and set their ranges
+    var x = d3.scaleLinear().range([0, width]);
+    var y = d3.scaleBand().range([0, height]).padding(0.2);
+
+    // append svg element to the body of the page
+    var svg = d3.select("body").append("svg")
+    .attr("id", "svg1")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+
+	   	// set the id, dimensions and position of the svg element 	
+       .append("g")
+       .attr("id", "container")
+       .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Get the data and filter for top 5 most trafficked species
+	  var pathToCsv = "q3.csv";		// path to csv
+	
+    d3.dsv(",", pathToCsv, function (d) {
+      return {
+        // format data attributes if required
+        species: d.species,
+        count: +d.count 
+      }
+    }).then(function (data) {
+      console.log(data); // you should see the data in your browser's developer tools console 
+      
+      /* Create bar plot using data from csv */
+
+      var top5 = data.sort((a, b) => d3.descending(a.count, b.count)).slice(0, 5);
+
+      // set the domains of X and Y scales based on data
+      x.domain([0, d3.max(top5, d => d.count)]);
+      y.domain(top5.map(d => d.species));
+      
+      // Adding colors
+      var colorScale = d3.scaleOrdinal()
+          .domain(top5.map(d => d.species))
+          .range(["#648FFF", "#DC267F", "#785EF0", "#FE6100", "#FFB000"]);
+      
+          // Add bars to svg - create new elements based on your data
+      var barsGroup = svg.append("g").attr("id", "bars");
+      barsGroup.selectAll(".bar")
+          .data(top5)
+          .enter()
+          .append("rect")
+          .attr("class", "bar")
+          .attr("y", d => y(d.species))
+          .attr("height", y.bandwidth())
+          .attr("x", 0)
+          .attr("width", d => x(d.count))
+          .style("fill", d => colorScale(d.species));
+          
+      // Add the X Axis
+      svg.append("g")
+          .attr("id", "x_axis")
+          .attr("transform", `translate(0,${height})`)
+          .call(d3.axisBottom(x).ticks(5));
+
+      // Add the text label for X Axis
+      svg.append("text")
+          .attr("id", "x_axis_label")
+          .attr("x", width / 2)
+          .attr("y", height +40)
+          .attr("class", "axis-label")
+          .text("Count");
+
+      // Add the Y Axis
+      svg.append("g")
+          .attr("id", "y_axis")
+          .call(d3.axisLeft(y));
+
+      // Add the text label for Y axis
+      svg.append("text")
+          .attr("id", "y_axis_label")
+          .attr("x", -height / 2)
+          .attr("y", -margin.left + 60)
+          .attr("class", "axis-label")
+          .attr("transform", "rotate(-90)")
+          .text("Species");
+
+      // Add GT username
+      d3.select("svg").append("text")
+          .attr("id", "credit")
+          .attr("x", width + margin.left -1)
+          .attr("y", height + margin.top +35)
+          .style("fill", "black")
+          .style("font-size", "12px")
+          .style("text-anchor", "end")
+          .text("rgandhi48");
+
+      // Add Title
+      svg.append("text")
+          .attr("id", "title")
+          .attr("x", width/2)
+          .attr("y", -20)
+          .attr("class", "title")
+          .attr("text-anchor", "middle")
+          .text("Wildlife Trafficking Incidents per Species (2015 to 2023)");
+
+    }).catch(function (error) {
+      console.log(error);
+    });
+
+  </script>
+</body>
