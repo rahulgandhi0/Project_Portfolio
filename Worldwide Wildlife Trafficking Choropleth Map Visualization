@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Wildlife Trafficking Incidents Choropleth Map</title>
+  <script src="../lib/d3.v5.min.js"></script>
+  <script src="../lib/topojson.v2.min.js"></script>
+  <script src="../lib/d3-geo-projection.v2.min.js"></script>
+  <script src="../lib/d3-legend.min.js"></script>
+  <script src="../lib/d3-tip.min.js"></script>
+  <style>
+    .container {
+      position: relative;
+      margin: 20px;
+    }
+    #yearDropdown {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 100;
+      padding: 5px;
+      font-size: 14px;
+    }
+    .countries {
+      stroke: #fff;
+      stroke-width: 0.5;
+    }
+    #tooltip {
+      position: absolute;
+      padding: 10px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      pointer-events: none;
+      font-size: 12px;
+      line-height: 1.4;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      display: none;
+    }
+    .legend {
+      font-size: 12px;
+    }
+    .legend rect {
+      stroke: #ccc;
+    }
+    #credit {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <select id="yearDropdown"></select>
+    <svg id="choropleth"></svg>
+    <div id="tooltip">
+      <text></text>
+    </div>
+    <text id="credit">rgandhi48</text>
+  </div>
+
+  <script>
+    // Define dimensions and margins
+    const width = 960;
+    const height = 600;
+    const margin = { top: 50, right: 160, bottom: 50, left: 50 };
+
+    // Set up the main SVG
+    const svg = d3.select("#choropleth")
+      .attr("width", width)
+      .attr("height", height);
+
+    // Define map projection and path generator
+    const projection = d3.geoNaturalEarth1()
+      .scale(180)
+      .translate([width / 2, height / 2]);
+    const path = d3.geoPath().projection(projection);
+
+    // Set up color scale for incident counts
+    const colorScale = d3.scaleQuantile()
+      .range(['#fee5d9','#fcae91','#fb6a4a','#cb181d']);
+
+    // Load geographic and trafficking data
+    Promise.all([
+      d3.json("data/world_countries.json"),
+      d3.csv("data/wildlife_trafficking.csv")
+    ]).then(data => {
+      const [worldData, traffickingData] = data;
+      const years = [...new Set(traffickingData.map(d => d.Year))].sort();
+
+      // Populate year dropdown
+      d3.select("#yearDropdown")
+        .selectAll("option")
+        .data(years)
+        .enter()
+        .append("option")
+        .attr("value", d => d)
+        .text(d => d);
+
+      // Function to update the map for a given year
+      function updateMap(year) {
+        const yearData = traffickingData.filter(d => d.Year === year);
+        const incidentCounts = yearData
+          .map(d => +d.Number_of_Incidents)
+          .filter(d => !isNaN(d));
+        colorScale.domain(incidentCounts);
+
+        // Create a group for countries if it doesn't exist
+        if (!svg.select("#countries").size()) {
+          svg.append("g").attr("id", "countries");
+        }
+
+        const countries = svg.select("#countries")
+          .selectAll("path")
+          .data(worldData.features);
+
+        // Draw and update country paths
+        countries.enter()
+          .append("path")
+          .merge(countries)
+          .attr("d", path)
+          .attr("class", "countries")
+          .each(function(d) {
+            const countryData = yearData.find(y => y["Country of Incident"] === d.properties.name);
+            d.incidentData = countryData ? {
+              Number_of_Incidents: countryData.Number_of_Incidents,
+              Average_Fine: countryData.Average_Fine,
+              Average_Imprisonment: countryData.Average_Imprisonment
+            } : null;
+          })
+          .style("fill", d => {
+            if (!d.incidentData) return "#cccccc";
+            return colorScale(+d.incidentData.Number_of_Incidents);
+          })
+          .on("mouseover", function(d) {
+            const tooltip = d3.select("#tooltip");
+            const currentYear = d3.select("#yearDropdown").node().value;
+            const incidentData = d.incidentData || {};
+            tooltip.select("text").html(`
+              Country: ${d.properties.name}<br>
+              Year: ${currentYear}<br>
+              Number of Incidents: ${incidentData.Number_of_Incidents || 'N/A'}<br>
+              Average Fine: ${incidentData.Average_Fine ? '$' + parseFloat(incidentData.Average_Fine).toFixed(2) : 'N/A'}<br>
+              Average Imprisonment: ${incidentData.Average_Imprisonment ? parseFloat(incidentData.Average_Imprisonment).toFixed(2) : 'N/A'} years
+            `);
+            tooltip.style("display", "block")
+              .style("left", (d3.event.pageX + 10) + "px")
+              .style("top", (d3.event.pageY - 28) + "px");
+          })
+          .on("mouseout", () => {
+            d3.select("#tooltip").style("display", "none");
+          });
+
+        // Remove any existing legend before updating
+        svg.select("#legend").remove();
+
+        // Create legend group
+        const legend = svg.append("g")
+          .attr("id", "legend")
+          .attr("class", "legend")
+          .attr("transform", `translate(${width - 140}, ${margin.top})`);
+
+        legend.append("text")
+          .attr("x", 0)
+          .attr("y", -10)
+          .style("font-weight", "bold")
+          .text("Incidents");
+
+        // Prepare legend data using the invertExtent method
+        const legendData = colorScale.range().map(color => {
+          const [min, max] = colorScale.invertExtent(color);
+          return { color, label: `${Math.round(min || 0)} - ${Math.round(max || 0)}` };
+        });
+
+        // Draw legend items
+        const legendItems = legend.selectAll("g")
+          .data(legendData)
+          .enter()
+          .append("g")
+          .attr("transform", (d, i) => `translate(0, ${i * 20})`);
+
+        legendItems.append("rect")
+          .attr("width", 15)
+          .attr("height", 15)
+          .style("fill", d => d.color);
+
+        legendItems.append("text")
+          .attr("x", 25)
+          .attr("y", 12)
+          .text(d => d.label);
+      }
+
+      // Initialize the map with the first year
+      updateMap(years[0]);
+
+      // Update the map when a new year is selected
+      d3.select("#yearDropdown").on("change", function() {
+        updateMap(this.value);
+      });
+    });
+  </script>
+</body>
+</html>
